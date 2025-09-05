@@ -31,7 +31,7 @@ func InitDefaultLogger() {
 func MustInitApplicationLogger() {
 	cfg := config.Global()
 
-	var w io.Writer
+	w := io.Writer(os.Stdout)
 	switch cfg.Env {
 	case config.EnvDev:
 		zerolog.SetGlobalLevel(zerolog.DebugLevel)

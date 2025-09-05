@@ -1,4 +1,4 @@
-package auth
+package v1
 
 import (
 	"crypto/rand"
@@ -9,60 +9,16 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/alexedwards/argon2id"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/rs/zerolog"
 
-	"github.com/alexedwards/argon2id"
-	"github.com/google/uuid"
-
-	"github.com/jackc/pgerrcode"
-
-	"github.com/adanyl0v/go-todo-list/internal/domain/sessions"
-	"github.com/adanyl0v/go-todo-list/internal/domain/users"
+	"github.com/adanyl0v/go-todo-list/internal/models"
 )
-
-const (
-	accessTokenCookie  = "access_token"
-	refreshTokenCookie = "refresh_token"
-)
-
-type Handler interface {
-	HandleLogin(c *gin.Context)
-	HandleRefresh(c *gin.Context)
-	HandleRegister(c *gin.Context)
-}
-
-type handlerImpl struct {
-	logger zerolog.Logger
-	pgPool *pgxpool.Pool
-
-	jwtIssuer          string
-	jwtSigningKey      []byte
-	jwtAccessTokenTTL  time.Duration
-	jwtRefreshTokenTTL time.Duration
-}
-
-func New(
-	logger zerolog.Logger,
-	pgPool *pgxpool.Pool,
-	jwtIssuer string,
-	jwtSigningKey string,
-	jwtAccessTokenTTL time.Duration,
-	jwtRefreshTokenTTL time.Duration,
-) Handler {
-	return &handlerImpl{
-		logger:             logger,
-		pgPool:             pgPool,
-		jwtIssuer:          jwtIssuer,
-		jwtSigningKey:      []byte(jwtSigningKey),
-		jwtAccessTokenTTL:  jwtAccessTokenTTL,
-		jwtRefreshTokenTTL: jwtRefreshTokenTTL,
-	}
-}
 
 type loginRequest struct {
 	Email    string `json:"email" binding:"required,email,max=255"`
@@ -84,7 +40,7 @@ func (h *handlerImpl) HandleLogin(c *gin.Context) {
 		Msg("login request")
 
 	now := time.Now()
-	user := users.User{
+	user := models.User{
 		Email:     req.Email,
 		UpdatedAt: now,
 	}
@@ -166,7 +122,7 @@ WHERE user_id = $1 AND fingerprint = $2
 		Msg("deleted sessions with the same browser fingerprint")
 
 	now = time.Now()
-	session := sessions.Session{
+	session := models.Session{
 		UserID:      user.ID,
 		Fingerprint: browserFingerprint,
 		ExpiresAt:   now.Add(h.jwtRefreshTokenTTL),
@@ -252,7 +208,7 @@ func (h *handlerImpl) HandleRefresh(c *gin.Context) {
 		return
 	}
 
-	session := sessions.Session{
+	session := models.Session{
 		RefreshToken: refreshToken,
 	}
 
@@ -386,7 +342,7 @@ func (h *handlerImpl) HandleRegister(c *gin.Context) {
 		Msg("register request")
 
 	now := time.Now()
-	user := users.User{
+	user := models.User{
 		Email:     req.Email,
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -464,7 +420,7 @@ VALUES ($1, $2, $3, $4, $5)
 		Msg("inserted user")
 
 	now = time.Now()
-	session := sessions.Session{
+	session := models.Session{
 		UserID:    user.ID,
 		ExpiresAt: now.Add(h.jwtRefreshTokenTTL),
 		CreatedAt: now,

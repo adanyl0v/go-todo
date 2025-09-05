@@ -12,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/adanyl0v/go-todo-list/internal/config"
-	"github.com/adanyl0v/go-todo-list/internal/domain/auth"
+	"github.com/adanyl0v/go-todo-list/internal/delivery/http/v1"
 )
 
 func MustListenAndServeHTTP() {
@@ -30,7 +30,7 @@ func MustListenAndServeHTTP() {
 
 	apiRouter := router.Group("/api/v1")
 
-	authController := auth.New(
+	v1Handler := v1.New(
 		globalLogger,
 		globalPostgresPool,
 		jwtCfg.Issuer,
@@ -39,9 +39,9 @@ func MustListenAndServeHTTP() {
 		jwtCfg.RefreshTokenTTL,
 	)
 	authRouter := apiRouter.Group("/auth")
-	authRouter.POST("/login", authController.HandleLogin)
-	authRouter.POST("/refresh", authController.HandleRefresh)
-	authRouter.POST("/register", authController.HandleRegister)
+	authRouter.POST("/login", v1Handler.HandleLogin)
+	authRouter.POST("/refresh", v1Handler.HandleRefresh)
+	authRouter.POST("/register", v1Handler.HandleRegister)
 
 	server := &http.Server{
 		Addr:    net.JoinHostPort(httpCfg.Host, httpCfg.Port),
