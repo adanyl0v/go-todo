@@ -9,4 +9,6 @@ func main() {
 
 	app.MustConnectPostgres()
 	defer app.DisconnectPostgres()
+
+	app.MustListenAndServeHTTP()
 }
