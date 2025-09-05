@@ -11,31 +11,13 @@ services:
     networks:
       - postgres_network
     depends_on:
-      pgbouncer:
-        condition: service_started
-
-  pgbouncer:
-    image: edoburu/pgbouncer:v1.24.1-p1
-    ports:
-      - '${PGBOUNCER_PORT}:5433'
-    environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: ${POSTGRES_DATABASE}
-      DB_USER: ${POSTGRES_USERNAME}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
-      AUTH_TYPE: scram-sha-256
-      POOL_MODE: transaction
-    networks:
-      - postgres_network
-    depends_on:
-      - postgres
-    restart: unless-stopped
+      postgres:
+        condition: service_healthy
 
   postgres:
     image: postgres:17.5-bookworm
     ports:
-      - '${POSTGRES_DOCKER_PORT}:5432'
+      - '${POSTGRES_PORT}:5432'
     environment:
       POSTGRES_DB: ${POSTGRES_DATABASE}
       POSTGRES_USER: ${POSTGRES_USERNAME}

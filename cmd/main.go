@@ -6,4 +6,7 @@ func main() {
 	app.InitDefaultLogger()
 	app.MustReadEnv()
 	app.MustInitApplicationLogger()
+
+	app.MustConnectPostgres()
+	defer app.DisconnectPostgres()
 }
