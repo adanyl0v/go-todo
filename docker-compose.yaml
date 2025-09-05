@@ -1,0 +1,65 @@
+version: '3'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - '${HTTP_PORT}:8080'
+    env_file: .env.dev
+    networks:
+      - postgres_network
+    depends_on:
+      pgbouncer:
+        condition: service_started
+
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.24.1-p1
+    ports:
+      - '${PGBOUNCER_PORT}:5433'
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${POSTGRES_DATABASE}
+      DB_USER: ${POSTGRES_USERNAME}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+    networks:
+      - postgres_network
+    depends_on:
+      - postgres
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17.5-bookworm
+    ports:
+      - '${POSTGRES_DOCKER_PORT}:5432'
+    environment:
+      POSTGRES_DB: ${POSTGRES_DATABASE}
+      POSTGRES_USER: ${POSTGRES_USERNAME}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - postgres_network
+    healthcheck:
+      test: [
+        'CMD', 'pg_isready',
+        '--username', '${POSTGRES_USERNAME}',
+        '--dbname', '${POSTGRES_DATABASE}',
+        '--port', '5432'
+      ]
+      interval: 1s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  postgres_network:
+    driver: bridge
