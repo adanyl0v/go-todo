@@ -1,2 +1,1 @@
-# go-todo-list
-Go To-Do List
+# Go To-Do List
