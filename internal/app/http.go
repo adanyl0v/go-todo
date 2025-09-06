@@ -84,6 +84,5 @@ func MustListenAndServeHTTP() {
 			Msg("failed to shutdown http server")
 		panic(err)
 	}
-	globalLogger.Info().
-		Msg("shut down http server")
+	globalLogger.Info().Msg("shut down http server")
 }

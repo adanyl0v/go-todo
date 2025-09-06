@@ -190,11 +190,10 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 		return
 	}
 
-	setJWTCookie(c, accessTokenCookie, accessToken, h.jwtAccessTokenTTL)
-	setJWTCookie(c, refreshTokenCookie, session.RefreshToken, h.jwtRefreshTokenTTL)
+	h.setAccessTokenCookie(c, accessToken)
+	h.setRefreshTokenCookie(c, session.RefreshToken)
 
-	h.logger.Info().
-		Msg("user logged in")
+	h.logger.Info().Msg("user logged in")
 	c.Status(http.StatusOK)
 }
 
@@ -315,11 +314,10 @@ WHERE id = $4
 		return
 	}
 
-	setJWTCookie(c, accessTokenCookie, accessToken, h.jwtAccessTokenTTL)
-	setJWTCookie(c, refreshTokenCookie, session.RefreshToken, h.jwtRefreshTokenTTL)
+	h.setAccessTokenCookie(c, accessToken)
+	h.setRefreshTokenCookie(c, session.RefreshToken)
 
-	h.logger.Info().
-		Msg("refreshed session")
+	h.logger.Info().Msg("refreshed session")
 	c.Status(http.StatusOK)
 }
 
@@ -495,11 +493,10 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 		return
 	}
 
-	setJWTCookie(c, accessTokenCookie, accessToken, h.jwtAccessTokenTTL)
-	setJWTCookie(c, refreshTokenCookie, session.RefreshToken, h.jwtRefreshTokenTTL)
+	h.setAccessTokenCookie(c, accessToken)
+	h.setRefreshTokenCookie(c, session.RefreshToken)
 
-	h.logger.Info().
-		Msg("registered user")
+	h.logger.Info().Msg("registered user")
 	c.Status(http.StatusCreated)
 }
 
@@ -515,13 +512,14 @@ func generateFingerprint(c *gin.Context) (string, error) {
 }
 
 func generateRefreshToken() (string, error) {
-	const entropy = 32 // 256-bit
-	tokenBytes := make([]byte, entropy)
-	_, err := rand.Read(tokenBytes)
+	const length = 32 // 256-bit
+	bytes := make([]byte, length)
+	_, err := rand.Read(bytes)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate token: %w", err)
 	}
-	token := base64.RawURLEncoding.EncodeToString(tokenBytes)
+
+	token := base64.RawURLEncoding.EncodeToString(bytes)
 	return token, nil
 }
 
@@ -539,14 +537,25 @@ func generateAccessToken(
 		NotBefore: jwt.NewNumericDate(now),
 		IssuedAt:  jwt.NewNumericDate(now),
 	})
+
 	accessToken, err := unsignedAccessToken.SignedString(signingKey)
 	if err != nil {
 		return "", fmt.Errorf("failed to sign access token: %w", err)
 	}
+
 	return accessToken, nil
 }
 
-func setJWTCookie(c *gin.Context, name, value string, maxAge time.Duration) {
-	c.SetCookie(name, value, int(maxAge.Seconds()),
-		"/", "", false, true)
+func (h *handlerImpl) setAccessTokenCookie(c *gin.Context, token string) {
+	// httpOnly must be false to allow client-side JavaScript
+	// to read the cookie and send it in the Authorization header.
+	const secure, httpOnly = false, false
+	c.SetCookie(accessTokenCookie, token, int(h.jwtAccessTokenTTL.Seconds()),
+		"/", "", secure, httpOnly)
+}
+
+func (h *handlerImpl) setRefreshTokenCookie(c *gin.Context, token string) {
+	const secure, httpOnly = false, true
+	c.SetCookie(accessTokenCookie, token, int(h.jwtRefreshTokenTTL.Seconds()),
+		"/", "", secure, httpOnly)
 }

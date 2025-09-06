@@ -24,8 +24,7 @@ func InitDefaultLogger() {
 		Int("pid", os.Getpid()).
 		Logger()
 
-	globalLogger.Info().
-		Msg("initialized default logger")
+	globalLogger.Info().Msg("initialized default logger")
 }
 
 func MustInitApplicationLogger() {
@@ -52,6 +51,5 @@ func MustInitApplicationLogger() {
 	}
 
 	globalLogger = globalLogger.Output(w)
-	globalLogger.Info().
-		Msg("initialized application logger")
+	globalLogger.Info().Msg("initialized application logger")
 }

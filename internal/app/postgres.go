@@ -52,6 +52,5 @@ func MustConnectPostgres() {
 
 func DisconnectPostgres() {
 	globalPostgresPool.Close()
-	globalLogger.Info().
-		Msg("disconnected from postgres")
+	globalLogger.Info().Msg("disconnected from postgres")
 }
