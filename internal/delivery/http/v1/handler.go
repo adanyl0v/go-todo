@@ -14,6 +14,12 @@ type Handler interface {
 	HandleRegister(c *gin.Context)
 	HandleLogout(c *gin.Context)
 	HandleAuthMiddleware(c *gin.Context)
+
+	HandleCreateTask(c *gin.Context)
+	HandleGetTasks(c *gin.Context)
+	HandleUpdateTask(c *gin.Context)
+	HandleSetTaskStatus(c *gin.Context)
+	HandleDeleteTask(c *gin.Context)
 }
 
 type handlerImpl struct {

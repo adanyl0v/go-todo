@@ -118,4 +118,11 @@ func registerRoutes(router gin.IRouter) {
 	authRouter.POST("/refresh", v1Handler.HandleRefresh)
 	authRouter.POST("/register", v1Handler.HandleRegister)
 	authRouter.POST("/logout", v1Handler.HandleAuthMiddleware, v1Handler.HandleLogout)
+
+	tasksRouter := router.Group("/tasks", v1Handler.HandleAuthMiddleware)
+	tasksRouter.GET("", v1Handler.HandleGetTasks)
+	tasksRouter.POST("", v1Handler.HandleCreateTask)
+	tasksRouter.PUT("/:id", v1Handler.HandleUpdateTask)
+	tasksRouter.PATCH("/:id", v1Handler.HandleSetTaskStatus)
+	tasksRouter.DELETE("/:id", v1Handler.HandleDeleteTask)
 }
