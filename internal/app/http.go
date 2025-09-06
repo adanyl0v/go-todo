@@ -22,26 +22,11 @@ func MustListenAndServeHTTP() {
 	}
 
 	httpCfg := cfg.HTTP
-	jwtCfg := cfg.JWT
 
 	router := gin.New()
 	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
-
-	apiRouter := router.Group("/api/v1")
-
-	v1Handler := v1.New(
-		globalLogger,
-		globalPostgresPool,
-		jwtCfg.Issuer,
-		jwtCfg.SigningKey,
-		jwtCfg.AccessTokenTTL,
-		jwtCfg.RefreshTokenTTL,
-	)
-	authRouter := apiRouter.Group("/auth")
-	authRouter.POST("/login", v1Handler.HandleLogin)
-	authRouter.POST("/refresh", v1Handler.HandleRefresh)
-	authRouter.POST("/register", v1Handler.HandleRegister)
+	registerRoutes(router)
 
 	server := &http.Server{
 		Addr:    net.JoinHostPort(httpCfg.Host, httpCfg.Port),
@@ -85,4 +70,23 @@ func MustListenAndServeHTTP() {
 		panic(err)
 	}
 	globalLogger.Info().Msg("shut down http server")
+}
+
+func registerRoutes(router gin.IRouter) {
+	jwtCfg := config.Global().JWT
+	v1Handler := v1.New(
+		globalLogger,
+		globalPostgresPool,
+		jwtCfg.Issuer,
+		jwtCfg.SigningKey,
+		jwtCfg.AccessTokenTTL,
+		jwtCfg.RefreshTokenTTL,
+	)
+	router = router.Group("/api/v1")
+
+	authRouter := router.Group("/auth")
+	authRouter.POST("/login", v1Handler.HandleLogin)
+	authRouter.POST("/refresh", v1Handler.HandleRefresh)
+	authRouter.POST("/register", v1Handler.HandleRegister)
+	authRouter.POST("/logout", v1Handler.HandleAuthMiddleware, v1Handler.HandleLogout)
 }

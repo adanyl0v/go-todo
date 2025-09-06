@@ -20,6 +20,11 @@ import (
 	"github.com/adanyl0v/go-todo-list/internal/models"
 )
 
+const (
+	accessTokenCookie  = "access_token"
+	refreshTokenCookie = "refresh_token"
+)
+
 type loginRequest struct {
 	Email    string `json:"email" binding:"required,email,max=255"`
 	Password string `json:"password" binding:"required,min=6,max=255"`
@@ -500,6 +505,41 @@ VALUES ($1, $2, $3, $4, $5, $6, $7)
 	c.Status(http.StatusCreated)
 }
 
+func (h *handlerImpl) HandleLogout(c *gin.Context) {
+	userIDValue, exists := c.Get(userIDCtxKey)
+	if !exists {
+		h.logger.Error().Msg("no user id found in context")
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+	userID, _ := userIDValue.(string)
+
+	const deleteSessionsQuery = `
+DELETE FROM sessions WHERE user_id = $1
+`
+	commandTad, err := h.pgPool.Exec(
+		c,
+		deleteSessionsQuery,
+		userID,
+	)
+	if err != nil {
+		h.logger.Error().
+			Err(err).
+			Msg("failed to delete sessions")
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	h.logger.Debug().
+		Int64("affected", commandTad.RowsAffected()).
+		Msg("deleted sessions")
+
+	clearCookie(c, accessTokenCookie)
+	clearCookie(c, refreshTokenCookie)
+
+	h.logger.Info().Msg("user logged out")
+	c.Status(http.StatusNoContent)
+}
+
 func generateFingerprint(c *gin.Context) (string, error) {
 	fingerprintBytes, err := json.Marshal(map[string]string{
 		"client_ip":  c.ClientIP(),
@@ -556,6 +596,11 @@ func (h *handlerImpl) setAccessTokenCookie(c *gin.Context, token string) {
 
 func (h *handlerImpl) setRefreshTokenCookie(c *gin.Context, token string) {
 	const secure, httpOnly = false, true
-	c.SetCookie(accessTokenCookie, token, int(h.jwtRefreshTokenTTL.Seconds()),
+	c.SetCookie(refreshTokenCookie, token, int(h.jwtRefreshTokenTTL.Seconds()),
 		"/", "", secure, httpOnly)
+}
+
+func clearCookie(c *gin.Context, name string) {
+	c.SetCookie(name, "", -1,
+		"/", "", false, false)
 }

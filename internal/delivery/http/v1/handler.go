@@ -8,15 +8,12 @@ import (
 	"github.com/rs/zerolog"
 )
 
-const (
-	accessTokenCookie  = "access_token"
-	refreshTokenCookie = "refresh_token"
-)
-
 type Handler interface {
 	HandleLogin(c *gin.Context)
 	HandleRefresh(c *gin.Context)
 	HandleRegister(c *gin.Context)
+	HandleLogout(c *gin.Context)
+	HandleAuthMiddleware(c *gin.Context)
 }
 
 type handlerImpl struct {
