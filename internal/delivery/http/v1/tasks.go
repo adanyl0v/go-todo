@@ -9,7 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/adanyl0v/go-todo-list/internal/models"
+	"github.com/adanyl0v/go-todo/internal/models"
 )
 
 type getTaskResponse struct {

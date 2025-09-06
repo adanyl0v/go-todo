@@ -8,7 +8,7 @@ import (
 
 	"github.com/rs/zerolog"
 
-	"github.com/adanyl0v/go-todo-list/internal/config"
+	"github.com/adanyl0v/go-todo/internal/config"
 )
 
 var globalLogger zerolog.Logger

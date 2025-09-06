@@ -18,8 +18,8 @@ import (
 
 	ginlogger "github.com/gin-contrib/logger"
 
-	"github.com/adanyl0v/go-todo-list/internal/config"
-	"github.com/adanyl0v/go-todo-list/internal/delivery/http/v1"
+	"github.com/adanyl0v/go-todo/internal/config"
+	"github.com/adanyl0v/go-todo/internal/delivery/http/v1"
 )
 
 func MustListenAndServeHTTP() {

@@ -1,4 +1,4 @@
-module github.com/adanyl0v/go-todo-list
+module github.com/adanyl0v/go-todo
 
 go 1.24.6
 

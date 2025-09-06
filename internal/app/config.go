@@ -3,7 +3,7 @@ package app
 import (
 	_ "github.com/joho/godotenv/autoload"
 
-	"github.com/adanyl0v/go-todo-list/internal/config"
+	"github.com/adanyl0v/go-todo/internal/config"
 )
 
 func MustReadEnv() {

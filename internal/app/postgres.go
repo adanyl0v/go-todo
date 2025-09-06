@@ -6,7 +6,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/adanyl0v/go-todo-list/internal/config"
+	"github.com/adanyl0v/go-todo/internal/config"
 )
 
 var globalPostgresPool *pgxpool.Pool

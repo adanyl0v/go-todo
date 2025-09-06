@@ -10,7 +10,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/jackc/pgx/v5"
 
-	"github.com/adanyl0v/go-todo-list/internal/models"
+	"github.com/adanyl0v/go-todo/internal/models"
 )
 
 const (

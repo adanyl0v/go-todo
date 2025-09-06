@@ -1,6 +1,6 @@
 package main
 
-import "github.com/adanyl0v/go-todo-list/internal/app"
+import "github.com/adanyl0v/go-todo/internal/app"
 
 func main() {
 	app.InitDefaultLogger()
