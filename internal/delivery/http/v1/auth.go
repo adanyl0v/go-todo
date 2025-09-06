@@ -44,10 +44,8 @@ func (h *handlerImpl) HandleLogin(c *gin.Context) {
 		Str("email", req.Email).
 		Msg("login request")
 
-	now := time.Now()
 	user := models.User{
-		Email:     req.Email,
-		UpdatedAt: now,
+		Email: req.Email,
 	}
 
 	const selectUserQuery = `
@@ -57,7 +55,7 @@ FROM users WHERE email = $1
 	err = h.pgPool.QueryRow(
 		c,
 		selectUserQuery,
-		req.Email,
+		user.Email,
 	).Scan(
 		&user.ID,
 		&user.Password,
@@ -96,24 +94,14 @@ FROM users WHERE email = $1
 		Str("id", user.ID).
 		Msg("found user")
 
-	browserFingerprint, err := generateFingerprint(c)
-	if err != nil {
-		h.logger.Error().
-			Err(err).
-			Msg("failed to generate fingerprint")
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-
 	const deleteSessionsQuery = `
 DELETE FROM sessions
-WHERE user_id = $1 AND fingerprint = $2
+WHERE user_id = $1
 `
 	commandTag, err := h.pgPool.Exec(
 		c,
 		deleteSessionsQuery,
 		user.ID,
-		browserFingerprint,
 	)
 	if err != nil {
 		h.logger.Error().
@@ -124,15 +112,14 @@ WHERE user_id = $1 AND fingerprint = $2
 	}
 	h.logger.Debug().
 		Int64("affected", commandTag.RowsAffected()).
-		Msg("deleted sessions with the same browser fingerprint")
+		Msg("deleted sessions with the same user id")
 
-	now = time.Now()
+	now := time.Now()
 	session := models.Session{
-		UserID:      user.ID,
-		Fingerprint: browserFingerprint,
-		ExpiresAt:   now.Add(h.jwtRefreshTokenTTL),
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		UserID:    user.ID,
+		ExpiresAt: now.Add(h.jwtRefreshTokenTTL),
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 
 	sessionUUID, err := uuid.NewV7()
@@ -144,6 +131,16 @@ WHERE user_id = $1 AND fingerprint = $2
 		return
 	}
 	session.ID = sessionUUID.String()
+
+	browserFingerprint, err := generateFingerprint(c)
+	if err != nil {
+		h.logger.Error().
+			Err(err).
+			Msg("failed to generate fingerprint")
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	session.Fingerprint = browserFingerprint
 
 	refreshToken, err := generateRefreshToken()
 	if err != nil {

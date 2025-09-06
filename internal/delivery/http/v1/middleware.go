@@ -51,6 +51,7 @@ func (h *handlerImpl) HandleAuthMiddleware(c *gin.Context) {
 			return
 		}
 
+		accessToken, _ = c.Cookie(accessTokenCookie)
 		claims, err = h.parseJWTToken(accessToken)
 		if err != nil {
 			h.logger.Error().

@@ -3,13 +3,20 @@ package app
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/danielkov/gin-helmet/ginhelmet"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"github.com/rs/zerolog"
+
+	ginlogger "github.com/gin-contrib/logger"
 
 	"github.com/adanyl0v/go-todo-list/internal/config"
 	"github.com/adanyl0v/go-todo-list/internal/delivery/http/v1"
@@ -24,8 +31,9 @@ func MustListenAndServeHTTP() {
 	httpCfg := cfg.HTTP
 
 	router := gin.New()
-	router.Use(gin.Logger())
 	router.Use(gin.Recovery())
+	router.Use(ginhelmet.Default())
+	router.Use(newHTTPLogger())
 	registerRoutes(router)
 
 	server := &http.Server{
@@ -70,6 +78,27 @@ func MustListenAndServeHTTP() {
 		panic(err)
 	}
 	globalLogger.Info().Msg("shut down http server")
+}
+
+func newHTTPLogger() gin.HandlerFunc {
+	w := io.Writer(os.Stdout)
+	if config.Global().Env == config.EnvLocal {
+		cw := zerolog.NewConsoleWriter()
+		cw.TimeFormat = time.DateTime
+		cw.Out = os.Stdout
+		w = cw
+	}
+
+	fn := ginlogger.SetLogger(
+		ginlogger.WithLogger(func(c *gin.Context, l zerolog.Logger) zerolog.Logger {
+			reqUUID, _ := uuid.NewRandom()
+			return l.Output(w).
+				With().
+				Str("id", reqUUID.String()).
+				Logger()
+		}),
+	)
+	return fn
 }
 
 func registerRoutes(router gin.IRouter) {
