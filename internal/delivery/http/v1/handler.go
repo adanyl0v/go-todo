@@ -1,11 +1,11 @@
 package v1
 
 import (
-	"time"
-
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog"
+
+	"github.com/adanyl0v/go-todo/internal/services"
 )
 
 type Handler interface {
@@ -24,28 +24,22 @@ type Handler interface {
 
 type handlerImpl struct {
 	logger zerolog.Logger
-	pgPool *pgxpool.Pool
-
-	jwtIssuer          string
-	jwtSigningKey      []byte
-	jwtAccessTokenTTL  time.Duration
-	jwtRefreshTokenTTL time.Duration
+	auth   services.AuthService
+	// Still used by auth middleware but need to be refactored.
+	pgPool        *pgxpool.Pool
+	jwtSigningKey []byte
 }
 
 func New(
 	logger zerolog.Logger,
 	pgPool *pgxpool.Pool,
-	jwtIssuer string,
-	jwtSigningKey string,
-	jwtAccessTokenTTL time.Duration,
-	jwtRefreshTokenTTL time.Duration,
+	jwtSigningKey []byte,
+	authService services.AuthService,
 ) Handler {
 	return &handlerImpl{
-		logger:             logger,
-		pgPool:             pgPool,
-		jwtIssuer:          jwtIssuer,
-		jwtSigningKey:      []byte(jwtSigningKey),
-		jwtAccessTokenTTL:  jwtAccessTokenTTL,
-		jwtRefreshTokenTTL: jwtRefreshTokenTTL,
+		logger:        logger,
+		pgPool:        pgPool,
+		jwtSigningKey: jwtSigningKey,
+		auth:          authService,
 	}
 }

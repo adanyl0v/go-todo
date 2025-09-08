@@ -1,23 +1,15 @@
 package v1
 
 import (
-	"crypto/rand"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"time"
 
-	"github.com/alexedwards/argon2id"
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/google/uuid"
-	"github.com/jackc/pgerrcode"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/adanyl0v/go-todo/internal/models"
+	"github.com/adanyl0v/go-todo/internal/services"
 )
 
 const (
@@ -26,176 +18,54 @@ const (
 )
 
 type loginRequest struct {
-	Email    string `json:"email" binding:"required,email,max=255"`
-	Password string `json:"password" binding:"required,min=6,max=255"`
+	Email    string `json:"email" form:"email" binding:"required,email,max=255"`
+	Password string `json:"password" form:"password" binding:"required,min=6,max=255"`
 }
 
 func (h *handlerImpl) HandleLogin(c *gin.Context) {
 	var req loginRequest
-	err := c.ShouldBindJSON(&req)
+	err := c.ShouldBind(&req)
 	if err != nil {
 		h.logger.Error().
 			Err(err).
-			Msg("failed to bind json")
-		c.AbortWithStatus(http.StatusBadRequest)
-		return
-	}
-	h.logger.Info().
-		Str("email", req.Email).
-		Msg("login request")
-
-	user := models.User{
-		Email: req.Email,
-	}
-
-	const selectUserQuery = `
-SELECT id, password
-FROM users WHERE email = $1
-`
-	err = h.pgPool.QueryRow(
-		c,
-		selectUserQuery,
-		user.Email,
-	).Scan(
-		&user.ID,
-		&user.Password,
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			h.logger.Error().
-				Err(err).
-				Msg("user not found")
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
-
-		h.logger.Error().
-			Err(err).
-			Msg("failed to select user")
-		c.AbortWithStatus(http.StatusInternalServerError)
+			Msg("failed to bind request body")
+		abort(c, newBadRequestError("invalid request body"))
 		return
 	}
 
-	match, err := argon2id.ComparePasswordAndHash(req.Password, user.Password)
-	if err != nil {
-		h.logger.Error().
-			Err(err).
-			Msg("failed to compare password")
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	if !match {
-		h.logger.Error().
-			Msg("password mismatch")
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-	h.logger.Debug().
-		Str("id", user.ID).
-		Msg("found user")
-
-	const deleteSessionsQuery = `
-DELETE FROM sessions
-WHERE user_id = $1
-`
-	commandTag, err := h.pgPool.Exec(
-		c,
-		deleteSessionsQuery,
-		user.ID,
-	)
-	if err != nil {
-		h.logger.Error().
-			Err(err).
-			Msg("failed to delete sessions")
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	h.logger.Debug().
-		Int64("affected", commandTag.RowsAffected()).
-		Msg("deleted sessions with the same user id")
-
-	now := time.Now()
-	session := models.Session{
-		UserID:    user.ID,
-		ExpiresAt: now.Add(h.jwtRefreshTokenTTL),
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-
-	sessionUUID, err := uuid.NewV7()
-	if err != nil {
-		h.logger.Error().
-			Err(err).
-			Msg("failed to generate session uuid")
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	session.ID = sessionUUID.String()
-
-	browserFingerprint, err := generateFingerprint(c)
+	fingerprint, err := generateFingerprint(c)
 	if err != nil {
 		h.logger.Error().
 			Err(err).
 			Msg("failed to generate fingerprint")
-		c.AbortWithStatus(http.StatusInternalServerError)
+		abort(c, newStatusTextError(http.StatusInternalServerError))
 		return
 	}
-	session.Fingerprint = browserFingerprint
 
-	refreshToken, err := generateRefreshToken()
+	result, err := h.auth.Login(c, services.LoginParams{
+		Email:       req.Email,
+		Password:    req.Password,
+		Fingerprint: fingerprint,
+	})
 	if err != nil {
 		h.logger.Error().
 			Err(err).
-			Msg("failed to generate refresh token")
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	session.RefreshToken = refreshToken
-
-	const insertSessionQuery = `
-INSERT INTO sessions (id, user_id, fingerprint, refresh_token, expires_at, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-`
-	_, err = h.pgPool.Exec(
-		c,
-		insertSessionQuery,
-		session.ID,
-		session.UserID,
-		session.Fingerprint,
-		session.RefreshToken,
-		session.ExpiresAt,
-		session.CreatedAt,
-		session.UpdatedAt,
-	)
-	if err != nil {
-		h.logger.Error().
-			Err(err).
-			Msg("failed to insert session")
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	h.logger.Debug().
-		Str("id", session.ID).
-		Msg("inserted session")
-
-	accessToken, err := generateAccessToken(
-		session.ID,
-		h.jwtIssuer,
-		h.jwtAccessTokenTTL,
-		h.jwtSigningKey,
-	)
-	if err != nil {
-		h.logger.Error().
-			Err(err).
-			Msg("failed to generate access token")
-		c.AbortWithStatus(http.StatusInternalServerError)
+			Msg("failed to login")
+		switch {
+		case errors.Is(err, services.ErrUserNotFound):
+			abort(c, newUnauthorizedError(services.ErrUserNotFound.Error()))
+		case errors.Is(err, services.ErrUserPasswordMismatch):
+			abort(c, newUnauthorizedError(services.ErrUserPasswordMismatch.Error()))
+		default:
+			abort(c, newStatusTextError(http.StatusInternalServerError))
+		}
 		return
 	}
 
-	h.setAccessTokenCookie(c, accessToken)
-	h.setRefreshTokenCookie(c, session.RefreshToken)
+	now := time.Now()
+	setAccessTokenCookie(c, result.AccessToken, result.AccessTokenExpiresAt.Sub(now))
+	setRefreshTokenCookie(c, result.RefreshToken, result.RefreshTokenExpiresAt.Sub(now))
 
-	h.logger.Info().Msg("user logged in")
 	c.Status(http.StatusOK)
 }
 
@@ -205,121 +75,41 @@ func (h *handlerImpl) HandleRefresh(c *gin.Context) {
 		h.logger.Error().
 			Err(err).
 			Msg("failed to get refresh token cookie")
-		c.AbortWithStatus(http.StatusBadRequest)
+		abort(c, newStatusTextError(http.StatusBadRequest))
 		return
 	}
 
-	session := models.Session{
-		RefreshToken: refreshToken,
-	}
-
-	const selectSessionQuery = `
-SELECT id, fingerprint, expires_at
-FROM sessions WHERE refresh_token = $1
-`
-	err = h.pgPool.QueryRow(
-		c,
-		selectSessionQuery,
-		session.RefreshToken,
-	).Scan(
-		&session.ID,
-		&session.Fingerprint,
-		&session.ExpiresAt,
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			h.logger.Error().
-				Err(err).
-				Msg("session not found")
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
-
-		h.logger.Error().
-			Err(err).
-			Msg("failed to select session")
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-
-	browserFingerprint, err := generateFingerprint(c)
+	fingerprint, err := generateFingerprint(c)
 	if err != nil {
 		h.logger.Error().
 			Err(err).
 			Msg("failed to generate fingerprint")
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
+		abort(c, newStatusTextError(http.StatusInternalServerError))
 	}
 
-	if browserFingerprint != session.Fingerprint {
-		h.logger.Error().
-			Msg("fingerprint mismatch")
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-
-	if time.Now().After(session.ExpiresAt) {
-		h.logger.Error().
-			Msg("session expired")
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-
-	refreshToken, err = generateRefreshToken()
+	result, err := h.auth.Refresh(c, services.RefreshParams{
+		RefreshToken: refreshToken,
+		Fingerprint:  fingerprint,
+	})
 	if err != nil {
 		h.logger.Error().
 			Err(err).
-			Msg("failed to generate refresh token")
-		c.AbortWithStatus(http.StatusInternalServerError)
+			Msg("failed to refresh session")
+		switch {
+		case errors.Is(err, services.ErrSessionNotFound):
+			abort(c, newUnauthorizedError(services.ErrSessionNotFound.Error()))
+		case errors.Is(err, services.ErrSessionExpired):
+			abort(c, newUnauthorizedError(services.ErrSessionExpired.Error()))
+		default:
+			abort(c, newStatusTextError(http.StatusInternalServerError))
+		}
 		return
 	}
-	session.RefreshToken = refreshToken
 
 	now := time.Now()
-	session.ExpiresAt = now.Add(h.jwtRefreshTokenTTL)
-	session.UpdatedAt = now
+	setAccessTokenCookie(c, result.AccessToken, result.AccessTokenExpiresAt.Sub(now))
+	setRefreshTokenCookie(c, result.RefreshToken, result.RefreshTokenExpiresAt.Sub(now))
 
-	const updateSessionQuery = `
-UPDATE sessions SET refresh_token = $1, expires_at = $2, updated_at = $3
-WHERE id = $4
-`
-	_, err = h.pgPool.Exec(
-		c,
-		updateSessionQuery,
-		session.RefreshToken,
-		session.ExpiresAt,
-		session.UpdatedAt,
-		session.ID,
-	)
-	if err != nil {
-		h.logger.Error().
-			Err(err).
-			Msg("failed to update session")
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	h.logger.Debug().
-		Str("id", session.ID).
-		Msg("updated session")
-
-	accessToken, err := generateAccessToken(
-		session.ID,
-		h.jwtIssuer,
-		h.jwtAccessTokenTTL,
-		h.jwtSigningKey,
-	)
-	if err != nil {
-		h.logger.Error().
-			Err(err).
-			Msg("failed to generate access token")
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-
-	h.setAccessTokenCookie(c, accessToken)
-	h.setRefreshTokenCookie(c, session.RefreshToken)
-
-	h.logger.Info().Msg("refreshed session")
 	c.Status(http.StatusOK)
 }
 
@@ -341,199 +131,55 @@ func (h *handlerImpl) HandleRegister(c *gin.Context) {
 		Str("email", req.Email).
 		Msg("register request")
 
-	now := time.Now()
-	user := models.User{
-		Email:     req.Email,
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-
-	userUUID, err := uuid.NewV7()
-	if err != nil {
-		h.logger.Error().
-			Err(err).
-			Msg("failed to generate user uuid")
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	user.ID = userUUID.String()
-
-	hash, err := argon2id.CreateHash(req.Password, argon2id.DefaultParams)
-	if err != nil {
-		h.logger.Error().
-			Err(err).
-			Msg("failed to hash password")
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	user.Password = hash
-
-	tx, err := h.pgPool.Begin(c)
-	if err != nil {
-		h.logger.Error().
-			Err(err).
-			Msg("failed to begin transaction")
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	defer func() {
-		if err != nil {
-			_ = tx.Rollback(c)
-		} else {
-			_ = tx.Commit(c)
-		}
-	}()
-
-	const insertUserQuery = `
-INSERT INTO users (id, email, password, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5)
-`
-	_, err = tx.Exec(
-		c,
-		insertUserQuery,
-		user.ID,
-		user.Email,
-		user.Password,
-		user.CreatedAt,
-		user.UpdatedAt,
-	)
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) {
-			if pgErr.Code == pgerrcode.UniqueViolation {
-				h.logger.Error().
-					Err(err).
-					Msg("user with this email already exists")
-				c.AbortWithStatus(http.StatusConflict)
-				return
-			}
-		}
-
-		h.logger.Error().
-			Err(err).
-			Msg("failed to insert user")
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	h.logger.Debug().
-		Str("id", user.ID).
-		Msg("inserted user")
-
-	now = time.Now()
-	session := models.Session{
-		UserID:    user.ID,
-		ExpiresAt: now.Add(h.jwtRefreshTokenTTL),
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-
-	sessionUUID, err := uuid.NewV7()
-	if err != nil {
-		h.logger.Error().
-			Err(err).
-			Msg("failed to generate session uuid")
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	session.ID = sessionUUID.String()
-
-	browserFingerprint, err := generateFingerprint(c)
+	fingerprint, err := generateFingerprint(c)
 	if err != nil {
 		h.logger.Error().
 			Err(err).
 			Msg("failed to generate fingerprint")
-		c.AbortWithStatus(http.StatusInternalServerError)
-	}
-	session.Fingerprint = browserFingerprint
-
-	refreshToken, err := generateRefreshToken()
-	if err != nil {
-		h.logger.Error().
-			Err(err).
-			Msg("failed to generate refresh token")
-		c.AbortWithStatus(http.StatusInternalServerError)
-	}
-	session.RefreshToken = refreshToken
-
-	const insertSessionQuery = `
-INSERT INTO sessions (id, user_id, fingerprint, refresh_token, expires_at, created_at, updated_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-`
-	_, err = tx.Exec(
-		c,
-		insertSessionQuery,
-		session.ID,
-		session.UserID,
-		session.Fingerprint,
-		session.RefreshToken,
-		session.ExpiresAt,
-		session.CreatedAt,
-		session.UpdatedAt,
-	)
-	if err != nil {
-		h.logger.Error().
-			Err(err).
-			Msg("failed to insert session")
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
-	h.logger.Debug().
-		Str("id", session.ID).
-		Msg("inserted session")
-
-	accessToken, err := generateAccessToken(
-		session.ID,
-		h.jwtIssuer,
-		h.jwtAccessTokenTTL,
-		h.jwtSigningKey,
-	)
-	if err != nil {
-		h.logger.Error().
-			Err(err).
-			Msg("failed to generate access token")
-		c.AbortWithStatus(http.StatusInternalServerError)
+		abort(c, newStatusTextError(http.StatusInternalServerError))
 		return
 	}
 
-	h.setAccessTokenCookie(c, accessToken)
-	h.setRefreshTokenCookie(c, session.RefreshToken)
+	result, err := h.auth.Register(c, services.LoginParams{
+		Email:       req.Email,
+		Password:    req.Password,
+		Fingerprint: fingerprint,
+	})
+	if err != nil {
+		h.logger.Error().
+			Err(err).
+			Msg("failed to register user")
+		switch {
+		case errors.Is(err, services.ErrUserAlreadyExists):
+			abort(c, newConflictError(services.ErrUserAlreadyExists.Error()))
+		default:
+			abort(c, newStatusTextError(http.StatusInternalServerError))
+		}
+		return
+	}
 
-	h.logger.Info().Msg("registered user")
+	now := time.Now()
+	setAccessTokenCookie(c, result.AccessToken, result.AccessTokenExpiresAt.Sub(now))
+	setRefreshTokenCookie(c, result.RefreshToken, result.RefreshTokenExpiresAt.Sub(now))
+
 	c.Status(http.StatusCreated)
 }
 
 func (h *handlerImpl) HandleLogout(c *gin.Context) {
-	userIDValue, exists := c.Get(userIDCtxKey)
-	if !exists {
-		h.logger.Error().Msg("no user id found in context")
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-	userID, _ := userIDValue.(string)
+	userID, _ := getStringFromContext(c, userIDCtxKey)
 
-	const deleteSessionsQuery = `
-DELETE FROM sessions WHERE user_id = $1
-`
-	commandTad, err := h.pgPool.Exec(
-		c,
-		deleteSessionsQuery,
-		userID,
-	)
+	err := h.auth.Logout(c, userID)
 	if err != nil {
 		h.logger.Error().
 			Err(err).
-			Msg("failed to delete sessions")
-		c.AbortWithStatus(http.StatusInternalServerError)
+			Msg("failed to logout")
+		abort(c, newStatusTextError(http.StatusInternalServerError))
 		return
 	}
-	h.logger.Debug().
-		Int64("affected", commandTad.RowsAffected()).
-		Msg("deleted sessions")
 
 	clearCookie(c, accessTokenCookie)
 	clearCookie(c, refreshTokenCookie)
 
-	h.logger.Info().Msg("user logged out")
 	c.Status(http.StatusNoContent)
 }
 
@@ -548,52 +194,26 @@ func generateFingerprint(c *gin.Context) (string, error) {
 	return string(fingerprintBytes), nil
 }
 
-func generateRefreshToken() (string, error) {
-	const length = 32 // 256-bit
-	bytes := make([]byte, length)
-	_, err := rand.Read(bytes)
-	if err != nil {
-		return "", fmt.Errorf("failed to generate token: %w", err)
+func getStringFromContext(c *gin.Context, key string) (string, bool) {
+	value, exists := c.Get(key)
+	if !exists {
+		return "", false
 	}
-
-	token := base64.RawURLEncoding.EncodeToString(bytes)
-	return token, nil
+	str, ok := value.(string)
+	return str, ok
 }
 
-func generateAccessToken(
-	sessionID string,
-	issuer string,
-	tokenTTL time.Duration,
-	signingKey []byte,
-) (string, error) {
-	now := time.Now()
-	unsignedAccessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
-		Issuer:    issuer,
-		Subject:   sessionID,
-		ExpiresAt: jwt.NewNumericDate(now.Add(tokenTTL)),
-		NotBefore: jwt.NewNumericDate(now),
-		IssuedAt:  jwt.NewNumericDate(now),
-	})
-
-	accessToken, err := unsignedAccessToken.SignedString(signingKey)
-	if err != nil {
-		return "", fmt.Errorf("failed to sign access token: %w", err)
-	}
-
-	return accessToken, nil
-}
-
-func (h *handlerImpl) setAccessTokenCookie(c *gin.Context, token string) {
+func setAccessTokenCookie(c *gin.Context, token string, maxAge time.Duration) {
 	// httpOnly must be false to allow client-side JavaScript
 	// to read the cookie and send it in the Authorization header.
 	const secure, httpOnly = false, false
-	c.SetCookie(accessTokenCookie, token, int(h.jwtAccessTokenTTL.Seconds()),
+	c.SetCookie(accessTokenCookie, token, int(maxAge.Seconds()),
 		"/", "", secure, httpOnly)
 }
 
-func (h *handlerImpl) setRefreshTokenCookie(c *gin.Context, token string) {
+func setRefreshTokenCookie(c *gin.Context, token string, maxAge time.Duration) {
 	const secure, httpOnly = false, true
-	c.SetCookie(refreshTokenCookie, token, int(h.jwtRefreshTokenTTL.Seconds()),
+	c.SetCookie(refreshTokenCookie, token, int(maxAge.Seconds()),
 		"/", "", secure, httpOnly)
 }
 

@@ -20,6 +20,7 @@ import (
 
 	"github.com/adanyl0v/go-todo/internal/config"
 	"github.com/adanyl0v/go-todo/internal/delivery/http/v1"
+	"github.com/adanyl0v/go-todo/internal/services"
 )
 
 func MustListenAndServeHTTP() {
@@ -103,13 +104,20 @@ func newHTTPLogger() gin.HandlerFunc {
 
 func registerRoutes(router gin.IRouter) {
 	jwtCfg := config.Global().JWT
-	v1Handler := v1.New(
+	authService := services.NewAuthService(
 		globalLogger,
 		globalPostgresPool,
 		jwtCfg.Issuer,
-		jwtCfg.SigningKey,
+		[]byte(jwtCfg.SigningKey),
 		jwtCfg.AccessTokenTTL,
 		jwtCfg.RefreshTokenTTL,
+	)
+
+	v1Handler := v1.New(
+		globalLogger,
+		globalPostgresPool,
+		[]byte(jwtCfg.SigningKey),
+		authService,
 	)
 	router = router.Group("/api/v1")
 
