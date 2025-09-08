@@ -19,7 +19,7 @@ func (h *handlerImpl) HandleAuthMiddleware(c *gin.Context) {
 		h.logger.Error().
 			Err(err).
 			Msg("failed to parse authorization header")
-		c.AbortWithStatus(http.StatusUnauthorized)
+		abort(c, newUnauthorizedError(err.Error()))
 		return
 	}
 
@@ -28,7 +28,7 @@ func (h *handlerImpl) HandleAuthMiddleware(c *gin.Context) {
 		h.logger.Error().
 			Err(err).
 			Msg("failed to parse access token")
-		c.AbortWithStatus(http.StatusUnauthorized)
+		abort(c, newUnauthorizedError("invalid access token"))
 		return
 	}
 
@@ -38,7 +38,7 @@ func (h *handlerImpl) HandleAuthMiddleware(c *gin.Context) {
 		h.logger.Error().
 			Err(err).
 			Msg("failed to generate fingerprint")
-		c.AbortWithStatus(http.StatusInternalServerError)
+		abort(c, newStatusTextError(http.StatusInternalServerError))
 		return
 	}
 
@@ -47,7 +47,7 @@ func (h *handlerImpl) HandleAuthMiddleware(c *gin.Context) {
 		h.logger.Error().
 			Err(err).
 			Msg("failed to get session")
-		c.AbortWithStatus(http.StatusUnauthorized)
+		abort(c, newStatusTextError(http.StatusInternalServerError))
 		return
 	}
 
@@ -55,7 +55,7 @@ func (h *handlerImpl) HandleAuthMiddleware(c *gin.Context) {
 		h.logger.Error().
 			Err(err).
 			Msg("fingerprint mismatch")
-		c.AbortWithStatus(http.StatusUnauthorized)
+		abort(c, newUnauthorizedError("fingerprint mismatch"))
 		return
 	}
 
