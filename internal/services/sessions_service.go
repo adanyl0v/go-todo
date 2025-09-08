@@ -56,7 +56,6 @@ WHERE id = $1
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			s.logger.Error().
-				Err(err).
 				Str("session_id", session.ID).
 				Msg("session not found")
 			return nil, ErrSessionNotFound
