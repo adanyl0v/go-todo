@@ -509,6 +509,34 @@ DELETE FROM sessions
 	return nil
 }
 
+func (s *authServiceImpl) ParseJWTToken(token string) (*jwt.RegisteredClaims, error) {
+	t, err := jwt.ParseWithClaims(
+		token,
+		&jwt.RegisteredClaims{},
+		func(token *jwt.Token) (any, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+			return s.jwtSigningKey, nil
+		},
+		jwt.WithIssuer(s.jwtIssuer),
+		jwt.WithIssuedAt(),
+		jwt.WithExpirationRequired(),
+	)
+	if err != nil {
+		if errors.Is(err, jwt.ErrTokenExpired) {
+			return nil, fmt.Errorf("token is expired: %w", err)
+		}
+		return nil, fmt.Errorf("failed to parse token: %w", err)
+	}
+
+	claims, ok := t.Claims.(*jwt.RegisteredClaims)
+	if !ok {
+		return nil, fmt.Errorf("failed to parse token: %w", err)
+	}
+	return claims, nil
+}
+
 func (s *authServiceImpl) generateRefreshToken() (string, error) {
 	const length = 32
 	bytes := make([]byte, length)
@@ -520,16 +548,22 @@ func (s *authServiceImpl) generateRefreshToken() (string, error) {
 }
 
 func (s *authServiceImpl) generateAccessToken(sessionID string) (string, time.Time, error) {
+	tokenUUID, err := uuid.NewRandom()
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("failed to generate id: %w", err)
+	}
+
 	now := time.Now()
 	expiresAt := now.Add(s.jwtAccessTokenTTL)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.RegisteredClaims{
+		ID:        tokenUUID.String(),
 		Issuer:    s.jwtIssuer,
 		Subject:   sessionID,
 		ExpiresAt: jwt.NewNumericDate(expiresAt),
 		NotBefore: jwt.NewNumericDate(now),
 		IssuedAt:  jwt.NewNumericDate(now),
-		ID:        "",
 	})
+
 	signed, err := token.SignedString(s.jwtSigningKey)
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("failed to sign token: %w", err)

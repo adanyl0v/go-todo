@@ -2,15 +2,10 @@ package v1
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/jackc/pgx/v5"
-
-	"github.com/adanyl0v/go-todo/internal/models"
 )
 
 const (
@@ -19,80 +14,26 @@ const (
 )
 
 func (h *handlerImpl) HandleAuthMiddleware(c *gin.Context) {
-	const authHeader = "Authorization"
-	header := c.GetHeader(authHeader)
-	if header == "" {
-		h.logger.Error().Msg("authorization header required")
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-
-	const bearerPrefix = "Bearer"
-	parts := strings.SplitN(header, " ", 2)
-	if len(parts) != 2 || parts[0] != bearerPrefix {
-		h.logger.Error().Msg("invalid authorization header")
-		c.AbortWithStatus(http.StatusUnauthorized)
-		return
-	}
-
-	accessToken := parts[1]
-	claims, err := h.parseJWTToken(accessToken)
+	accessToken, err := parseAuthorizationHeader(c)
 	if err != nil {
-		if !errors.Is(err, jwt.ErrTokenExpired) {
-			h.logger.Error().
-				Err(err).
-				Msg("failed to parse token")
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
-
-		h.HandleRefresh(c)
-		if c.IsAborted() {
-			return
-		}
-
-		accessToken, _ = c.Cookie(accessTokenCookie)
-		claims, err = h.parseJWTToken(accessToken)
-		if err != nil {
-			h.logger.Error().
-				Err(err).
-				Msg("failed to parse fresh token")
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
-	}
-
-	session := models.Session{
-		ID: claims.Subject,
-	}
-
-	const selectSessionQuery = `
-SELECT user_id, fingerprint
-FROM sessions WHERE id = $1
-`
-	err = h.pgPool.QueryRow(
-		c,
-		selectSessionQuery,
-		session.ID,
-	).Scan(
-		&session.UserID,
-		&session.Fingerprint,
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			h.logger.Warn().Msg("session not found")
-			c.AbortWithStatus(http.StatusUnauthorized)
-			return
-		}
-
 		h.logger.Error().
 			Err(err).
-			Msg("failed to fetch session")
-		c.AbortWithStatus(http.StatusInternalServerError)
+			Msg("failed to parse authorization header")
+		c.AbortWithStatus(http.StatusUnauthorized)
 		return
 	}
 
-	browserFingerprint, err := generateFingerprint(c)
+	claims, err := h.auth.ParseJWTToken(accessToken)
+	if err != nil {
+		h.logger.Error().
+			Err(err).
+			Msg("failed to parse access token")
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+
+	// Generate a fingerprint before going to the database.
+	fingerprint, err := generateFingerprint(c)
 	if err != nil {
 		h.logger.Error().
 			Err(err).
@@ -101,7 +42,16 @@ FROM sessions WHERE id = $1
 		return
 	}
 
-	if browserFingerprint != session.Fingerprint {
+	session, err := h.sessions.GetSessionByID(c, claims.Subject)
+	if err != nil {
+		h.logger.Error().
+			Err(err).
+			Msg("failed to get session")
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
+
+	if fingerprint != session.Fingerprint {
 		h.logger.Error().
 			Err(err).
 			Msg("fingerprint mismatch")
@@ -114,17 +64,17 @@ FROM sessions WHERE id = $1
 	c.Next()
 }
 
-func (h *handlerImpl) parseJWTToken(tokenString string) (*jwt.RegisteredClaims, error) {
-	token, err := jwt.ParseWithClaims(tokenString, &jwt.RegisteredClaims{}, func(token *jwt.Token) (any, error) {
-		return h.jwtSigningKey, nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("invalid token: %w", err)
+func parseAuthorizationHeader(c *gin.Context) (string, error) {
+	const authHeader = "Authorization"
+	header := c.GetHeader(authHeader)
+	if header == "" {
+		return "", errors.New("missing authorization header")
 	}
 
-	claims, ok := token.Claims.(*jwt.RegisteredClaims)
-	if !ok {
-		return nil, fmt.Errorf("failed to parse token claims")
+	const bearerPrefix = "Bearer"
+	parts := strings.SplitN(header, " ", 2)
+	if len(parts) != 2 || parts[0] != bearerPrefix {
+		return "", errors.New("invalid authorization header")
 	}
-	return claims, nil
+	return parts[1], nil
 }

@@ -4,6 +4,10 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+
+	"github.com/adanyl0v/go-todo/internal/models"
 )
 
 var (
@@ -32,10 +36,25 @@ type AuthService interface {
 	// if the session is expired.
 	Refresh(ctx context.Context, params RefreshParams) (*LoginResult, error)
 
+	// Register a user with the given email and password.
+	//
+	// It hashes the password, generates a unique ID and creates a
+	// session with the given fingerprint and a fresh JWT token pair.
+	//
+	// It returns ErrUserAlreadyExists if the user
+	// with the given email already exists.
 	Register(ctx context.Context, params LoginParams) (*LoginResult, error)
 
 	// Logout invalidates all sessions with the given user ID.
 	Logout(ctx context.Context, userID string) error
+
+	// ParseJWTToken parses the given JWT token and returns the registered
+	// claims or jwt.ErrTokenExpired if the token is expired.
+	ParseJWTToken(token string) (*jwt.RegisteredClaims, error)
+}
+
+type SessionService interface {
+	GetSessionByID(ctx context.Context, sessionID string) (*models.Session, error)
 }
 
 type LoginParams struct {

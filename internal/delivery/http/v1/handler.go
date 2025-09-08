@@ -23,23 +23,23 @@ type Handler interface {
 }
 
 type handlerImpl struct {
-	logger zerolog.Logger
-	auth   services.AuthService
-	// Still used by auth middleware but need to be refactored.
-	pgPool        *pgxpool.Pool
-	jwtSigningKey []byte
+	logger   zerolog.Logger
+	auth     services.AuthService
+	sessions services.SessionService
+	// Still used by task handlers but need to be refactored.
+	pgPool *pgxpool.Pool
 }
 
 func New(
 	logger zerolog.Logger,
 	pgPool *pgxpool.Pool,
-	jwtSigningKey []byte,
 	authService services.AuthService,
+	sessionService services.SessionService,
 ) Handler {
 	return &handlerImpl{
-		logger:        logger,
-		pgPool:        pgPool,
-		jwtSigningKey: jwtSigningKey,
-		auth:          authService,
+		logger:   logger,
+		auth:     authService,
+		pgPool:   pgPool,
+		sessions: sessionService,
 	}
 }

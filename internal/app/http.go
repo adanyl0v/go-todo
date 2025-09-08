@@ -112,12 +112,16 @@ func registerRoutes(router gin.IRouter) {
 		jwtCfg.AccessTokenTTL,
 		jwtCfg.RefreshTokenTTL,
 	)
+	sessionsService := services.NewSessionService(
+		globalLogger,
+		globalPostgresPool,
+	)
 
 	v1Handler := v1.New(
 		globalLogger,
 		globalPostgresPool,
-		[]byte(jwtCfg.SigningKey),
 		authService,
+		sessionsService,
 	)
 	router = router.Group("/api/v1")
 
