@@ -26,6 +26,7 @@ type handlerImpl struct {
 	logger   zerolog.Logger
 	auth     services.AuthService
 	sessions services.SessionService
+	tasks    services.TaskService
 	// Still used by task handlers but need to be refactored.
 	pgPool *pgxpool.Pool
 }
@@ -35,11 +36,13 @@ func New(
 	pgPool *pgxpool.Pool,
 	authService services.AuthService,
 	sessionService services.SessionService,
+	taskService services.TaskService,
 ) Handler {
 	return &handlerImpl{
 		logger:   logger,
 		auth:     authService,
-		pgPool:   pgPool,
 		sessions: sessionService,
+		tasks:    taskService,
+		pgPool:   pgPool,
 	}
 }

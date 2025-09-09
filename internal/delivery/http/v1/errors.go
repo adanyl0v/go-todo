@@ -1,9 +1,15 @@
 package v1
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
+)
+
+var (
+	errInvalidRequestBody      = errors.New("invalid request body")
+	errMandatoryCookieNotFound = errors.New("mandatory cookie not found")
 )
 
 type apiError struct {
