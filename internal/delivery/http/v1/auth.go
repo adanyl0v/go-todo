@@ -29,7 +29,7 @@ func (h *handlerImpl) HandleLogin(c *gin.Context) {
 		h.logger.Error().
 			Err(err).
 			Msg("failed to bind request body")
-		abort(c, newBadRequestError("invalid request body"))
+		abort(c, newBadRequestError(errInvalidRequestBody.Error()))
 		return
 	}
 
@@ -75,7 +75,7 @@ func (h *handlerImpl) HandleRefresh(c *gin.Context) {
 		h.logger.Error().
 			Err(err).
 			Msg("failed to get refresh token cookie")
-		abort(c, newStatusTextError(http.StatusBadRequest))
+		abort(c, newBadRequestError(errMandatoryCookieNotFound.Error()))
 		return
 	}
 

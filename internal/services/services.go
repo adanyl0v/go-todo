@@ -16,6 +16,8 @@ var (
 	ErrUserPasswordMismatch = errors.New("user password mismatch")
 	ErrSessionNotFound      = errors.New("session not found")
 	ErrSessionExpired       = errors.New("session expired")
+	ErrTaskNotFound         = errors.New("task not found")
+	ErrInvalidTaskStatus    = errors.New("invalid task status")
 )
 
 type AuthService interface {
@@ -53,10 +55,6 @@ type AuthService interface {
 	ParseJWTToken(token string) (*jwt.RegisteredClaims, error)
 }
 
-type SessionService interface {
-	GetSessionByID(ctx context.Context, sessionID string) (*models.Session, error)
-}
-
 type LoginParams struct {
 	Email       string
 	Password    string
@@ -75,4 +73,34 @@ type LoginResult struct {
 type RefreshParams struct {
 	RefreshToken string
 	Fingerprint  string
+}
+
+type SessionService interface {
+	GetSessionByID(ctx context.Context, sessionID string) (*models.Session, error)
+}
+
+type TaskService interface {
+	CreateTask(ctx context.Context, task *models.Task) (*models.Task, error)
+	GetTasksByUserID(ctx context.Context, userID string, offset, limit uint32) ([]*models.Task, error)
+	UpdateTask(ctx context.Context, params UpdateTaskParams) (*models.Task, error)
+	UpdateTaskStatus(ctx context.Context, params UpdateTaskStatusParams) (*models.Task, error)
+	DeleteTask(ctx context.Context, params DeleteTaskParams) error
+}
+
+type UpdateTaskParams struct {
+	ID          string
+	UserID      string
+	Title       *string
+	Description *string
+}
+
+type UpdateTaskStatusParams struct {
+	ID     string
+	UserID string
+	Status string
+}
+
+type DeleteTaskParams struct {
+	ID     string
+	UserID string
 }
